@@ -241,3 +241,10 @@ def fourier_encode_dist(x, num_encodings = 4, include_self = False):
     x = torch.cat([x.sin(), x.cos()], dim=-1)
     x = torch.cat((x, orig_x), dim = -1) if include_self else x
     return x
+
+def seq_r(s1, s2):
+  k = 0 
+  for c1, c2 in zip(s1, s2):
+    if c1 == c2: 
+      k += 1
+  return k / len(s1)

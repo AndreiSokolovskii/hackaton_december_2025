@@ -15,6 +15,7 @@ from torch_geometric.transforms import AddLaplacianEigenvectorPE, AddRandomWalkP
 from torch_geometric.data import Data as PyG_data
 import os.path as osp
 import pydssp
+from torch_geometric.data import Batch
 try:
     get_ipython
     from tqdm.notebook import tqdm
@@ -265,6 +266,34 @@ def one_shot_diverse(model, data, temperature, verbose, suppress = None, eol=Fal
     confidence = res_conf.mean().item()
     seq_recovery = res_y.eq(real_y).sum() / real_y.shape[0]
     return S_to_seq(res_y), seq_recovery.item(), confidence
+@torch.no_grad()
+def one_shot_fast_batch(model, data, temperature, verbose, suppress = None, eol=False, num_seq_per_target=1):
+    real_y = data.y.clone()
+    label_mask = data.label_mask
+    pos_to_design = torch.where(label_mask.logical_not())[0]
+    res_y = torch.zeros_like(data.y)
+    res_y[label_mask] = data.y[label_mask]
+    y_hat = model(x=data.x, edge_index=data.edge_index,
+                   edge_attr=data.edge_attr, y=data.y,
+                     label_mask=data.label_mask, batch=data.batch,
+                       laplacian_eigenvector_pe=data.laplacian_eigenvector_pe, random_walk_pe=data.random_walk_pe) 
+
+    if suppress is not None: y_hat[:, suppress] = -1e9
+    K = num_seq_per_target
+    dist = Categorical(logits=y_hat / temperature)
+    samples = dist.sample(sample_shape=(K,))
+    out_Conf = []
+    out_Sr = []
+    out_Seq = []
+    for i in range(K):
+        sample = samples[i]
+        res_y[label_mask.logical_not()] = sample[label_mask.logical_not()]
+        res_conf = dist.log_prob(sample).exp()[label_mask.logical_not()]
+        seq_recovery = res_y.eq(real_y).sum() / real_y.shape[0]
+        out_Conf += [res_conf]
+        out_Sr += [seq_recovery.item()]
+        out_Seq += [S_to_seq(res_y)]
+    return out_Seq, out_Sr, out_Conf
 
 @torch.no_grad()
 def iterative_shot(model, data, temperature, verbose, suppress= None, eol=False, num_seq_per_target=1):
@@ -293,6 +322,30 @@ def iterative_shot(model, data, temperature, verbose, suppress= None, eol=False,
     confidence = torch.tensor(res_conf).mean().item()
     seq_recovery = res_y.eq(real_y).sum() / real_y.shape[0] 
     return S_to_seq(res_y), seq_recovery.item(), confidence
+@torch.no_grad()
+def warmup_model(model, device):
+    num_nodes = 10
+    for _ in range(5):
+            num_edges = num_nodes * 20
+            x = torch.randn((num_nodes, 33), device=device)
+            edge_index = torch.randint(low=0, high=num_nodes, size = (2, num_edges), device=device)
+            edge_attr = torch.randn((num_edges, 606), device=device)
+            y = torch.randint(low=0, high=19, size = (num_nodes,), device=device)
+            label_mask = torch.zeros_like(y, device=device, dtype=torch.bool)
+            batch = torch.zeros_like(y, device=device)
+            laplacian_eigenvector_pe = torch.randn((num_nodes, 10), device=device)
+            random_walk_pe = torch.randn((num_nodes, 10), device=device)
+            
+            y_hat = model(x=x, 
+                            edge_index=edge_index, 
+                            edge_attr=edge_attr, 
+                            y=y, 
+                            label_mask=label_mask, 
+                            batch=batch, 
+                            laplacian_eigenvector_pe=laplacian_eigenvector_pe, 
+                            random_walk_pe=random_walk_pe) 
+            num_nodes += 1
+
 
 def main(args):
     list_of_files = glob.glob(args.input_pdb)
@@ -343,45 +396,110 @@ def main(args):
     if len(list_of_files) >= 1:
         extra_outer_loop = tqdm(list_of_files, desc='Iteration through PDBs', position=0) if verbose else list_of_files
         eol = True
-    for input_pdb in extra_outer_loop:
-        
+    dl = []
+    if batched and len(list_of_files) > 2 and not iterative_sampling:
         if len(args.output_path) < 1:
             import os
-            if not os.path.exists('output_GT'):
-                os.makedirs('output_GT')
-            output_path = 'output_GT'
+            if not os.path.exists('output_GT_2'):
+                os.makedirs('output_GT_2')
+            output_path = 'output_GT_2'
         else:
             import os 
             if not os.path.exists(args.output_path):
                 os.makedirs(args.output_path)
             output_path = args.output_path
-        
-        name = input_pdb.split('/')[-1].split('.')[0]
-        output_fasta = os.path.join(output_path,  name + '.fasta')
+        generate = one_shot_fast_batch
+        warmup_model(model, device)
+        dl = []
+        for input_pdb in extra_outer_loop:
+            data = parse_and_featurize_light(pdb_path=input_pdb, design_position=design_position, device=device)
+            data.pdb_path = input_pdb
+            dl += [data]
+        max_num = 25000
+        skip_too_big = True
+        samples =  []
+        len_d = len(dl)
+        indices = range(len_d)
+        lengths = [dl[id].num_nodes for id in indices]
+        sorted_ix = np.argsort(lengths)
+        clusters  = []
+        num_processed = 0
+        current_num = 0
+        while (num_processed < len_d):
+            for i in sorted_ix[num_processed:]:
+                data = dl[indices[i]]
+                num = data.num_nodes
+                if current_num + num > max_num:
+                    if current_num == 0:
+                        if skip_too_big:
+                            continue
+                    else:  # Mini-batch filled:
+                        break
 
-        data = parse_and_featurize_light(pdb_path=input_pdb, design_position=design_position, device=device)#, path=jit_featurizer_path)
-        with open(output_fasta, 'w') as fout:
-            fout.write('>' + name + '_init_sequece\n')
-            fout.write(S_to_seq(data.y) + '\n')
-            outer_loop = tqdm(range(num_seq_per_target), desc='Generation Sequences', position=1 if eol else 0, leave=False if eol else True) if verbose else range(num_seq_per_target)
-            if iterative_sampling or one_shot_div:
-                for i in outer_loop:
-                    if i > 0 and one_shot_div:
-                        torch_geometric.seed_everything(seed + i)
-                        data_tmp = parse_and_featurize_light(pdb_path=input_pdb, design_position=design_position, device=device, data=data_tmp)
-                    else:
-                        data_tmp = copy.copy(data)
-                    data_tmp = data_tmp.to(device)
-                    seq, sr, conf = generate(model, data_tmp, temperature, verbose, suppress, eol)
-                    fout.write('>gen_seq_' + str(i) + ' seq_recovery = ' + str(sr) + '; confidence = ' + str(conf) + '\n')
-                    fout.write(seq + '\n')        
+                samples.append(dl[indices[i]])
+                num_processed += 1
+                current_num += num
+            clusters.append(samples)
+            samples = []
+            current_num = 0
+        for clust in clusters:
+            batch_data = Batch.from_data_list(clust)
+            seq, sr, conf = generate(model, batch_data, temperature, verbose, suppress, eol, num_seq_per_target)
+            ptr = batch_data.ptr.cpu()
+            for i, pdb_path in enumerate(batch_data.pdb_path):
+                name = pdb_path.split('/')[-1].split('.')[0]
+                output_fasta = os.path.join(output_path,  name + '.fasta')
+                Y0 = S_to_seq(batch_data.y)
+                with open(output_fasta, 'w') as fout:
+                    fout.write('>' + name + '_init_sequece\n')
+                    fout.write(Y0[ptr[i]:ptr[i+1]] + '\n')
+                    for j, s in enumerate(seq):
+                        s_res = s[ptr[i]:ptr[i+1]]
+                        conf_res = conf[j][ptr[i]:ptr[i+1]].mean().item()
+                        sr_res = seq_r(Y0[ptr[i]:ptr[i+1]],s_res)
+                        fout.write('>gen_seq_' + str(j) + ' seq_recovery = ' + str(sr_res) + '; confidence = ' + str(conf_res) + '\n')
+                        fout.write(s_res + '\n')
+
+    else:
+        for input_pdb in extra_outer_loop:
+            
+            if len(args.output_path) < 1:
+                import os
+                if not os.path.exists('output_GT'):
+                    os.makedirs('output_GT')
+                output_path = 'output_GT'
             else:
-                data_tmp = copy.copy(data)
-                data_tmp = data_tmp.to(device)
-                seq, sr, conf = generate(model, data_tmp, temperature, verbose, suppress, eol, num_seq_per_target)
-                for i in outer_loop:
-                    fout.write('>gen_seq_' + str(i) + ' seq_recovery = ' + str(sr[i]) + '; confidence = ' + str(conf[i]) + '\n')
-                    fout.write(seq[i] + '\n')
+                import os 
+                if not os.path.exists(args.output_path):
+                    os.makedirs(args.output_path)
+                output_path = args.output_path
+            
+            name = input_pdb.split('/')[-1].split('.')[0]
+            output_fasta = os.path.join(output_path,  name + '.fasta')
+
+            data = parse_and_featurize_light(pdb_path=input_pdb, design_position=design_position, device=device)#, path=jit_featurizer_path)
+            with open(output_fasta, 'w') as fout:
+                fout.write('>' + name + '_init_sequece\n')
+                fout.write(S_to_seq(data.y) + '\n')
+                outer_loop = tqdm(range(num_seq_per_target), desc='Generation Sequences', position=1 if eol else 0, leave=False if eol else True) if verbose else range(num_seq_per_target)
+                if iterative_sampling or one_shot_div:
+                    for i in outer_loop:
+                        if i > 0 and one_shot_div:
+                            torch_geometric.seed_everything(seed + i)
+                            data_tmp = parse_and_featurize_light(pdb_path=input_pdb, design_position=design_position, device=device, data=data_tmp)
+                        else:
+                            data_tmp = copy.copy(data)
+                        data_tmp = data_tmp.to(device)
+                        seq, sr, conf = generate(model, data_tmp, temperature, verbose, suppress, eol)
+                        fout.write('>gen_seq_' + str(i) + ' seq_recovery = ' + str(sr) + '; confidence = ' + str(conf) + '\n')
+                        fout.write(seq + '\n')        
+                else:
+                    data_tmp = copy.copy(data)
+                    data_tmp = data_tmp.to(device)
+                    seq, sr, conf = generate(model, data_tmp, temperature, verbose, suppress, eol, num_seq_per_target)
+                    for i in outer_loop:
+                        fout.write('>gen_seq_' + str(i) + ' seq_recovery = ' + str(sr[i]) + '; confidence = ' + str(conf[i]) + '\n')
+                        fout.write(seq[i] + '\n')
 
 
 if __name__ == '__main__':
@@ -398,6 +516,7 @@ if __name__ == '__main__':
     argparser.add_argument("--model_masked",'-m',  action="store_true", default=False, help="Using of model trained with masking")
     argparser.add_argument("--path_to_model", '-p', type=str, default='', help='Dir name with model_weights')
     argparser.add_argument("--verbose",'-v', action="store_true", default=False, help="Process detalisation level")
+    argparser.add_argument("--batched",'-b', action="store_true", default=False, help="Experimental feature key for batched prediction")
     
     args = argparser.parse_args()  
     main(args)
