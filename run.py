@@ -397,7 +397,7 @@ def main(args):
         extra_outer_loop = tqdm(list_of_files, desc='Iteration through PDBs', position=0) if verbose else list_of_files
         eol = True
     dl = []
-    if batched and len(list_of_files) > 2 and not iterative_sampling:
+    if args.batched and len(list_of_files) > 2 and not iterative_sampling:
         if len(args.output_path) < 1:
             import os
             if not os.path.exists('output_GT_2'):
@@ -444,7 +444,7 @@ def main(args):
             current_num = 0
         for clust in clusters:
             batch_data = Batch.from_data_list(clust)
-            seq, sr, conf = generate(model, batch_data, temperature, verbose, suppress, eol, num_seq_per_target)
+            seq, sr, conf = generate(model, batch_data.to(device), temperature, verbose, suppress, eol, num_seq_per_target)
             ptr = batch_data.ptr.cpu()
             for i, pdb_path in enumerate(batch_data.pdb_path):
                 name = pdb_path.split('/')[-1].split('.')[0]
