@@ -448,7 +448,7 @@ def main(args):
             ptr = batch_data.ptr.cpu()
             for i, pdb_path in enumerate(batch_data.pdb_path):
                 name = pdb_path.split('/')[-1].split('.')[0]
-                output_fasta = os.path.join(output_path,  name + '.fasta')
+                output_fasta = os.path.join(output_path,  name + '.fa')
                 Y0 = S_to_seq(batch_data.y)
                 with open(output_fasta, 'w') as fout:
                     fout.write('>' + name + '_init_sequece\n')
@@ -475,7 +475,7 @@ def main(args):
                 output_path = args.output_path
             
             name = input_pdb.split('/')[-1].split('.')[0]
-            output_fasta = os.path.join(output_path,  name + '.fasta')
+            output_fasta = os.path.join(output_path,  name + '.fa')
 
             data = parse_and_featurize_light(pdb_path=input_pdb, design_position=design_position, device=device)#, path=jit_featurizer_path)
             with open(output_fasta, 'w') as fout:
