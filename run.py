@@ -372,11 +372,15 @@ def main(args):
 
     if args.iterative_sampling:generate = iterative_shot
     elif args.one_shot_diverse:generate = one_shot_diverse
+    elif args.iterative_refin: 
+        from new_regime import sampler_refinement
+        generate = sampler_refinement
     else:generate = one_shot_fast
 
 
     temperature = args.temperature
     iterative_sampling = args.iterative_sampling
+    iterative_refin = args.iterative_refin
     num_seq_per_target = args.num_seq_per_target
     one_shot_div = args.one_shot_diverse
     design_position = args.design_position
@@ -496,12 +500,20 @@ def main(args):
                         fout.write('>gen_seq_' + str(i) + ' seq_recovery = ' + str(sr) + '; confidence = ' + str(conf) + '\n')
                         fout.write(seq + '\n')        
                 else:
-                    data_tmp = copy.copy(data)
-                    data_tmp = data_tmp.to(device)
-                    seq, sr, conf = generate(model, data_tmp, temperature, verbose, suppress, eol, num_seq_per_target)
-                    for i in outer_loop:
-                        fout.write('>gen_seq_' + str(i) + ' seq_recovery = ' + str(sr[i]) + '; confidence = ' + str(conf[i]) + '\n')
-                        fout.write(seq[i] + '\n')
+                    if iterative_refin:
+                        out = generate(data_tmp.clone(), model, temperature, num_seq_per_target)
+                        for n_idx , item in enumerate(out):
+                            q = item[0]
+                            s_iterate_shot, s_iterate_shot_conf, s_iterate_shot_entropy, s_iterate_shot_seq_rec = q['seq'], q['confidence'], q['entropy'], q['recovery']
+                            fout.write('>gen_seq_'+str(n_idx) +' seq_recovery = ' + str(s_iterate_shot_seq_rec) + '; confidence = ' + str(s_iterate_shot_conf) +  "\n")
+                            fout.write(s_iterate_shot+ '\n')
+                    else:
+                        data_tmp = copy.copy(data)
+                        data_tmp = data_tmp.to(device)
+                        seq, sr, conf = generate(model, data_tmp, temperature, verbose, suppress, eol, num_seq_per_target)
+                        for i in outer_loop:
+                            fout.write('>gen_seq_' + str(i) + ' seq_recovery = ' + str(sr[i]) + '; confidence = ' + str(conf[i]) + '\n')
+                            fout.write(seq[i] + '\n')
 
 
 if __name__ == '__main__':
@@ -512,6 +524,7 @@ if __name__ == '__main__':
     argparser.add_argument("--temperature", '-t' , type=float, default=0.1, help='Sampling temperature for amino acids. Higher values will lead to more diversity.')
     argparser.add_argument("--iterative_sampling", '-s',  action="store_true", default=False, help='Iterative decoding, otherwise one-shot generation')
     argparser.add_argument("--one_shot_diverse", '-D',  action="store_true", default=False, help='One-shot prediction with probably more diverse sequences')
+    argparser.add_argument("--iterative_refin", '-R',  action="store_true", default=False, help='Iterative Refinement')
     argparser.add_argument("--seed", type=int, default=-1, help="If set to -1 then a random seed will be picked")
     argparser.add_argument("--num_seq_per_target",'-n', type=int, default=1, help="Number of sequences to generate")
     argparser.add_argument("--suppress_AAs", '-x', type=list, default='X', help="Specify which amino acids should be omitted in the generated sequence, e.g. 'AC' would omit alanine and cystine.")
