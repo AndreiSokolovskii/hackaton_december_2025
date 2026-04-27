@@ -406,7 +406,7 @@ def sampler_refinement(data_input, model, temperature, num_samples):
     Y = data_input.y.clone()
     data = data_input.clone()
     
-    ll = int(num_samples ** 0.5)
+    ll = int(num_samples ** 0.5) + 1
     ss = ll
     FR = []
     for i in range(ll):
@@ -431,5 +431,5 @@ def sampler_refinement(data_input, model, temperature, num_samples):
             native_seq_for_out=S_to_seq(Y),
             
         )
-        FR += [final_records]
+        FR = FR + final_records
     return FR[:num_samples]
