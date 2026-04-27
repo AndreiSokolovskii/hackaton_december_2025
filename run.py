@@ -501,7 +501,7 @@ def main(args):
                         fout.write(seq + '\n')        
                 else:
                     if iterative_refin:
-                        out = generate(data_tmp.clone(), model, temperature, num_seq_per_target)
+                        out = generate(data.to(device).clone(), model, temperature, num_seq_per_target)
                         for n_idx , item in enumerate(out):
                             q = item[0]
                             s_iterate_shot, s_iterate_shot_conf, s_iterate_shot_entropy, s_iterate_shot_seq_rec = q['seq'], q['confidence'], q['entropy'], q['recovery']
