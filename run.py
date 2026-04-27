@@ -16,6 +16,7 @@ from torch_geometric.data import Data as PyG_data
 import os.path as osp
 import pydssp
 from torch_geometric.data import Batch
+from utils import write_poly_glycine_pdb
 try:
     get_ipython
     from tqdm.notebook import tqdm
@@ -476,8 +477,9 @@ def main(args):
             
             name = input_pdb.split('/')[-1].split('.')[0]
             output_fasta = os.path.join(output_path,  name + '.fa')
-
+            output_polyG_pdb = os.path.join(output_path,  name + '_polyGly.pdb')
             data = parse_and_featurize_light(pdb_path=input_pdb, design_position=design_position, device=device)#, path=jit_featurizer_path)
+            write_poly_glycine_pdb(data, filename=output_polyG_pdb)
             with open(output_fasta, 'w') as fout:
                 fout.write('>' + name + '_init_sequece\n')
                 fout.write(S_to_seq(data.y) + '\n')
