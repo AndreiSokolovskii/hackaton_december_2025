@@ -1,0 +1,35 @@
+--- utils_new.py	2026-04-27 16:38:09
++++ utils_old.py	2026-04-27 16:33:21
+@@ -61,7 +61,7 @@
+     '''output the loss (for entire trajectory)'''
+     return np.array([loss[x] for loss in self._tmp["log"]])
+ 
+-  def save_pdb(self, filename=None, get_best=True, renum_pdb=True, aux=None):
++  def save_pdb(self, filename=None, get_best=True, renum_pdb=True, aux=None, best_idx=0):
+     '''
+     save pdb coordinates (if filename provided, otherwise return as string)
+     - set get_best=False, to get the last sampled sequence
+\ No newline at end of file
+@@ -70,7 +70,7 @@
+       aux = self._tmp["best"]["aux"] if (get_best and "aux" in self._tmp["best"]) else self.aux
+     aux = aux["all"]
+     
+-    p = {k:aux[k] for k in ["aatype","residue_index","atom_positions","atom_mask"]}
++    p = {k:aux[k][best_idx:best_idx+1] for k in ["aatype","residue_index","atom_positions","atom_mask"]}
+     p["b_factors"] = 100 * p["atom_mask"] * aux["plddt"][...,None]
+ 
+     def to_pdb_str(x, n=None):
+\ No newline at end of file
+@@ -176,9 +176,9 @@
+   def clear_best(self):
+     self._tmp["best"] = {}
+ 
+-  def save_current_pdb(self, filename=None):
++  def save_current_pdb(self, filename=None, best_idx=0):
+     '''save pdb coordinates (if filename provided, otherwise return as string)'''
+-    self.save_pdb(filename=filename, get_best=False)
++    self.save_pdb(filename=filename, get_best=False, best_idx=best_idx)
+ 
+   def plot_current_pdb(self, show_sidechains=False, show_mainchains=False,
+     color="pLDDT", color_HP=False, size=(800,480), animate=False):
+\ No newline at end of file

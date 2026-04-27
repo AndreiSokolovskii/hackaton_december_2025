@@ -1,0 +1,21 @@
+--- design_old.py	2026-04-27 12:19:45
++++ design_new.py	2026-04-27 12:21:41
+@@ -101,8 +101,16 @@
+       if np.issubdtype(x.dtype, np.integer): return x[0]
+       else: return x.mean(0)
+ 
+-    self.aux = jax.tree_util.tree_map(avg_or_first, auxs)
+-    self.aux["atom_positions"] = auxs["atom_positions"][0]
++    if self.Best_or_Average:
++      model_plddt_scores = auxs["plddt"].mean(-1)
++      best_idx = np.argmax(model_plddt_scores)
++      def get_best(x):
++          return x[best_idx]
++      self.aux = jax.tree_util.tree_map(get_best, auxs)
++      self.aux["atom_positions"] = auxs["atom_positions"][best_idx]
++    else:
++      self.aux = jax.tree_util.tree_map(avg_or_first, auxs)
++      self.aux["atom_positions"] = auxs["atom_positions"][0]
+     self.aux["all"] = auxs
+     
+     # post-design callbacks

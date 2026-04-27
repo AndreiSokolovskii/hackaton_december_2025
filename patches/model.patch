@@ -1,0 +1,25 @@
+--- model_old.py	2026-04-27 12:14:47
++++ model_new.py	2026-04-27 12:15:54
+@@ -27,9 +27,12 @@
+                use_templates=False,
+                debug=False,
+                data_dir=".", 
++               Best_or_Average = True,
++               UseFullModel = True,
+                **kwargs):  
+     assert protocol in ["fixbb","hallucination","binder","partial"]
+-
++    self.Best_or_Average = Best_or_Average
++    self.UseFullModel = UseFullModel
+     self.protocol = protocol
+     self._num = kwargs.pop("num_seq",1)
+     self._args = {"use_templates":use_templates, "use_multimer":use_multimer, "use_bfloat16":True,
+@@ -103,7 +106,7 @@
+     self._cfg.model.global_config.use_remat = self._args["use_remat"]
+     self._cfg.model.global_config.use_dgram = self._args["use_dgram"]
+     self._cfg.model.global_config.bfloat16  = self._args["use_bfloat16"]
+-
++    if self.UseFullModel: model_names = None
+     # load model_params
+     if model_names is None:
+       model_names = []
