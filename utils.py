@@ -248,3 +248,47 @@ def seq_r(s1, s2):
     if c1 == c2: 
       k += 1
   return k / len(s1)
+def write_poly_glycine_pdb(data, filename="poly_gly.pdb"):
+    """
+    N, CA, C, O: torch.Tensor of shape (L, 3)
+    """
+    
+    prot_x = data.pos
+    pos = torch.zeros_like(prot_x)
+    CA = prot_x[:, 6:9]
+    C  = prot_x[:, 3:6]
+    O  = prot_x[:, :3]
+    N  = prot_x[:, 9:]
+    L = N.shape[0]
+    atom_id = 1
+    chain_id = "A"
+    
+    with open(filename, "w") as f:
+        for i in range(L):
+            res_id = i + 1
+            
+            atoms = [
+                ("N",  N[i]),
+                ("CA", CA[i]),
+                ("C",  C[i]),
+                ("O",  O[i]),
+            ]
+            
+            for atom_name, coord in atoms:
+                x, y, z = coord.tolist()
+                
+                # PDB fixed-width formatting
+                line = (
+                    f"ATOM  {atom_id:5d} "
+                    f"{atom_name:^4s}"
+                    f" GLY {chain_id}"
+                    f"{res_id:4d}    "
+                    f"{x:8.3f}{y:8.3f}{z:8.3f}"
+                    f"  1.00  0.00           "
+                    f"{atom_name[0]:>2s}\n"
+                )
+                
+                f.write(line)
+                atom_id += 1
+        
+        f.write("END\n")
