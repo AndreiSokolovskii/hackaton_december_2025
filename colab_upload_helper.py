@@ -436,3 +436,22 @@ def archive_latest_output() -> Path:
             )
 
     return zip_path
+def archive_all_outputs_single() -> Path:
+    folder_names = sorted([
+        f.name for f in OUTPUT_DIR.iterdir() if f.is_dir()
+    ])
+    if not folder_names:
+        raise RuntimeError("There are no folders in output/")
+    hash_input = "|".join(folder_names).encode("utf-8")
+    short_hash = hashlib.sha1(hash_input).hexdigest()[:5]
+    zip_path = OUTPUT_DIR / f"all_outputs_{short_hash}.zip"
+    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
+        for folder in OUTPUT_DIR.iterdir():
+            if folder.is_dir():
+                for file in folder.rglob("*"):
+                    zf.write(
+                        file,
+                        arcname=file.relative_to(OUTPUT_DIR)
+                    )
+
+    return zip_path
