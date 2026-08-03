@@ -170,7 +170,7 @@ def data_featurize(data, num_rbf=16, radius=9.5, max_n=48, device='cuda'):
     if not hasattr(data, 'label_mask'):
         data.label_mask = torch.zeros_like(data.y, dtype=torch.bool, device=data.y.device)
     if not hasattr(data, 'batch'):
-        data.label_mask = torch.zeros_like(data.y, device=data.y.device)
+        data.batch = torch.zeros_like(data.y, device=data.y.device)
     prot_x = data.pos.to(device)
     
     Ca = prot_x[:, 6:9]
