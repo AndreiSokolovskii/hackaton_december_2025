@@ -178,7 +178,7 @@ def data_featurize(data, num_rbf=16, radius=9.5, max_n=48, device='cuda'):
     O  = prot_x[:, :3]
     N  = prot_x[:, 9:]   
     atoms= torch.stack([N, Ca, C, O], dim=1)
-    edge_index = radius_graph(x = Ca, r =radius, loop = True, max_num_neighbors=max_n)
+    edge_index = radius_graph(x = Ca.contiguous(), r =radius, loop = True, max_num_neighbors=max_n)
     dssp = pydssp.assign(atoms, out_type='onehot').to(torch.float32)
 
     
